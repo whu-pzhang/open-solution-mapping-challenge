@@ -6,7 +6,7 @@ from torch.autograd import Variable
 from torch import optim
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.externals import joblib
+import joblib
 from sklearn.ensemble import RandomForestRegressor
 
 from .callbacks import NeptuneMonitorSegmentation, ValidationMonitorSegmentation
@@ -16,58 +16,106 @@ from .steps.pytorch.callbacks import CallbackList, TrainingMonitor, ModelCheckpo
 from .steps.pytorch.models import Model
 from .steps.pytorch.validation import multiclass_segmentation_loss, DiceLoss
 from .steps.sklearn.models import LightGBM, SklearnRegressor
-from .utils import softmax
+from .utils import softmax, get_device
 from .unet_models import AlbuNet, UNet11, UNetVGG16, UNetResNet
 
-PRETRAINED_NETWORKS = {'VGG11': {'model': UNet11,
-                                 'model_config': {'num_classes': 2, 'pretrained': True},
-                                 'init_weights': False},
-                       'VGG16': {'model': UNetVGG16,
-                                 'model_config': {'num_classes': 2, 'pretrained': True,
-                                                  'dropout_2d': 0.0, 'is_deconv': True},
-                                 'init_weights': False},
-                       'AlbuNet': {'model': AlbuNet,
-                                   'model_config': {'num_classes': 2, 'pretrained': True, 'is_deconv': True},
-                                   'init_weights': False},
-                       'ResNet34': {'model': UNetResNet,
-                                    'model_config': {'encoder_depth': 34, 'num_classes': 2,
-                                                     'num_filters': 32, 'dropout_2d': 0.0,
-                                                     'pretrained': True, 'is_deconv': True, },
-                                    'init_weights': False},
-                       'ResNet101': {'model': UNetResNet,
-                                     'model_config': {'encoder_depth': 101, 'num_classes': 2,
-                                                      'num_filters': 32, 'dropout_2d': 0.0,
-                                                      'pretrained': True, 'is_deconv': True, },
-                                     'init_weights': False},
-                       'ResNet152': {'model': UNetResNet,
-                                     'model_config': {'encoder_depth': 152, 'num_classes': 2,
-                                                      'num_filters': 32, 'dropout_2d': 0.0,
-                                                      'pretrained': True, 'is_deconv': True, },
-                                     'init_weights': False}
-                       }
+PRETRAINED_NETWORKS = {
+    'VGG11': {
+        'model': UNet11,
+        'model_config': {
+            'num_classes': 2,
+            'pretrained': True
+        },
+        'init_weights': False
+    },
+    'VGG16': {
+        'model': UNetVGG16,
+        'model_config': {
+            'num_classes': 2,
+            'pretrained': True,
+            'dropout_2d': 0.0,
+            'is_deconv': True
+        },
+        'init_weights': False
+    },
+    'AlbuNet': {
+        'model': AlbuNet,
+        'model_config': {
+            'num_classes': 2,
+            'pretrained': True,
+            'is_deconv': True
+        },
+        'init_weights': False
+    },
+    'ResNet34': {
+        'model': UNetResNet,
+        'model_config': {
+            'encoder_depth': 34,
+            'num_classes': 2,
+            'num_filters': 32,
+            'dropout_2d': 0.0,
+            'pretrained': True,
+            'is_deconv': True,
+        },
+        'init_weights': False
+    },
+    'ResNet101': {
+        'model': UNetResNet,
+        'model_config': {
+            'encoder_depth': 101,
+            'num_classes': 2,
+            'num_filters': 32,
+            'dropout_2d': 0.0,
+            'pretrained': True,
+            'is_deconv': True,
+        },
+        'init_weights': False
+    },
+    'ResNet152': {
+        'model': UNetResNet,
+        'model_config': {
+            'encoder_depth': 152,
+            'num_classes': 2,
+            'num_filters': 32,
+            'dropout_2d': 0.0,
+            'pretrained': True,
+            'is_deconv': True,
+        },
+        'init_weights': False
+    }
+}
 
 
 class BasePyTorchUNet(Model):
+
     def __init__(self, architecture_config, training_config, callbacks_config):
         """
         """
-        super().__init__(architecture_config, training_config, callbacks_config)
+        super().__init__(architecture_config, training_config,
+                         callbacks_config)
         self.set_model()
         self.weight_regularization = weight_regularization_unet
-        self.optimizer = optim.Adam(self.weight_regularization(self.model, **architecture_config['regularizer_params']),
-                                    **architecture_config['optimizer_params'])
+        self.optimizer = optim.Adam(
+            self.weight_regularization(
+                self.model, **architecture_config['regularizer_params']),
+            **architecture_config['optimizer_params'])
         self.loss_function = None
         self.callbacks = callbacks_unet(self.callbacks_config)
+
+        self.device = get_device()
 
     def fit(self, datagen, validation_datagen=None, meta_valid=None):
         self._initialize_model_weights()
 
         self.model = nn.DataParallel(self.model)
 
-        if torch.cuda.is_available():
-            self.model = self.model.cuda()
+        # if torch.cuda.is_available():
+        #     self.model = self.model.cuda()
+        self.model = self.model.to(self.device)
 
-        self.callbacks.set_params(self, validation_datagen=validation_datagen, meta_valid=meta_valid)
+        self.callbacks.set_params(self,
+                                  validation_datagen=validation_datagen,
+                                  meta_valid=meta_valid)
         self.callbacks.on_train_begin()
 
         batch_gen, steps = datagen
@@ -102,20 +150,29 @@ class BasePyTorchUNet(Model):
 
 
 class PyTorchUNet(BasePyTorchUNet):
+
     def __init__(self, architecture_config, training_config, callbacks_config):
-        super().__init__(architecture_config, training_config, callbacks_config)
-        self.loss_function = [('multichannel_map', multiclass_segmentation_loss, 1.0)]
+        super().__init__(architecture_config, training_config,
+                         callbacks_config)
+        self.loss_function = [('multichannel_map',
+                               multiclass_segmentation_loss, 1.0)]
 
 
 class PyTorchUNetStream(BasePyTorchUNet):
+
     def __init__(self, architecture_config, training_config, callbacks_config):
-        super().__init__(architecture_config, training_config, callbacks_config)
-        self.loss_function = [('multichannel_map', multiclass_segmentation_loss, 1.0)]
+        super().__init__(architecture_config, training_config,
+                         callbacks_config)
+        self.loss_function = [('multichannel_map',
+                               multiclass_segmentation_loss, 1.0)]
+        self.device = get_device()
 
     def transform(self, datagen, validation_datagen=None, *args, **kwargs):
         if len(self.output_names) == 1:
             output_generator = self._transform(datagen, validation_datagen)
-            output = {'{}_prediction'.format(self.output_names[0]): output_generator}
+            output = {
+                '{}_prediction'.format(self.output_names[0]): output_generator
+            }
             return output
         else:
             raise NotImplementedError
@@ -129,12 +186,13 @@ class PyTorchUNetStream(BasePyTorchUNet):
             else:
                 X = data
 
-            if torch.cuda.is_available():
-                X = Variable(X, volatile=True).cuda()
-            else:
-                X = Variable(X, volatile=True)
-
-            outputs_batch = self.model(X)
+            # if torch.cuda.is_available():
+            #     X = Variable(X, volatile=True).cuda()
+            # else:
+            #     X = Variable(X, volatile=True)
+            X = Variable(X).to(self.device)
+            with torch.no_grad():
+                outputs_batch = self.model(X)
             outputs_batch = outputs_batch.data.cpu().numpy()
 
             for output in outputs_batch:
@@ -147,38 +205,52 @@ class PyTorchUNetStream(BasePyTorchUNet):
 
 
 class PyTorchUNetWeighted(BasePyTorchUNet):
+
     def __init__(self, architecture_config, training_config, callbacks_config):
-        super().__init__(architecture_config, training_config, callbacks_config)
-        weights_function = partial(get_weights, **architecture_config['weighted_cross_entropy'])
-        weighted_loss = partial(multiclass_weighted_cross_entropy, weights_function=weights_function)
+        super().__init__(architecture_config, training_config,
+                         callbacks_config)
+        weights_function = partial(
+            get_weights, **architecture_config['weighted_cross_entropy'])
+        weighted_loss = partial(multiclass_weighted_cross_entropy,
+                                weights_function=weights_function)
         dice_loss = partial(multiclass_dice_loss, excluded_classes=[0])
-        loss = partial(mixed_dice_cross_entropy_loss,
-                       dice_loss=dice_loss,
-                       dice_weight=architecture_config['loss_weights']['dice_mask'],
-                       cross_entropy_weight=architecture_config['loss_weights']['bce_mask'],
-                       cross_entropy_loss=weighted_loss,
-                       **architecture_config['dice'])
+        loss = partial(
+            mixed_dice_cross_entropy_loss,
+            dice_loss=dice_loss,
+            dice_weight=architecture_config['loss_weights']['dice_mask'],
+            cross_entropy_weight=architecture_config['loss_weights']
+            ['bce_mask'],
+            cross_entropy_loss=weighted_loss,
+            **architecture_config['dice'])
         self.loss_function = [('multichannel_map', loss, 1.0)]
 
 
 class PyTorchUNetWeightedStream(BasePyTorchUNet):
+
     def __init__(self, architecture_config, training_config, callbacks_config):
-        super().__init__(architecture_config, training_config, callbacks_config)
-        weights_function = partial(get_weights, **architecture_config['weighted_cross_entropy'])
-        weighted_loss = partial(multiclass_weighted_cross_entropy, weights_function=weights_function)
+        super().__init__(architecture_config, training_config,
+                         callbacks_config)
+        weights_function = partial(
+            get_weights, **architecture_config['weighted_cross_entropy'])
+        weighted_loss = partial(multiclass_weighted_cross_entropy,
+                                weights_function=weights_function)
         dice_loss = partial(multiclass_dice_loss, excluded_classes=[0])
-        loss = partial(mixed_dice_cross_entropy_loss,
-                       dice_loss=dice_loss,
-                       dice_weight=architecture_config['loss_weights']['dice_mask'],
-                       cross_entropy_weight=architecture_config['loss_weights']['bce_mask'],
-                       cross_entropy_loss=weighted_loss,
-                       **architecture_config['dice'])
+        loss = partial(
+            mixed_dice_cross_entropy_loss,
+            dice_loss=dice_loss,
+            dice_weight=architecture_config['loss_weights']['dice_mask'],
+            cross_entropy_weight=architecture_config['loss_weights']
+            ['bce_mask'],
+            cross_entropy_loss=weighted_loss,
+            **architecture_config['dice'])
         self.loss_function = [('multichannel_map', loss, 1.0)]
 
     def transform(self, datagen, validation_datagen=None, *args, **kwargs):
         if len(self.output_names) == 1:
             output_generator = self._transform(datagen, validation_datagen)
-            output = {'{}_prediction'.format(self.output_names[0]): output_generator}
+            output = {
+                '{}_prediction'.format(self.output_names[0]): output_generator
+            }
             return output
         else:
             raise NotImplementedError
@@ -192,12 +264,13 @@ class PyTorchUNetWeightedStream(BasePyTorchUNet):
             else:
                 X = data
 
-            if torch.cuda.is_available():
-                X = Variable(X, volatile=True).cuda()
-            else:
-                X = Variable(X, volatile=True)
-
-            outputs_batch = self.model(X)
+            # if torch.cuda.is_available():
+            #     X = Variable(X, volatile=True).cuda()
+            # else:
+            #     X = Variable(X, volatile=True)
+            X = Variable(X).to(self.device)
+            with torch.no_grad():
+                outputs_batch = self.model(X)
             outputs_batch = outputs_batch.data.cpu().numpy()
 
             for output in outputs_batch:
@@ -210,6 +283,7 @@ class PyTorchUNetWeightedStream(BasePyTorchUNet):
 
 
 class ScoringLightGBM(LightGBM):
+
     def __init__(self, model_params, training_params, train_size, target):
         self.train_size = train_size
         self.target = target
@@ -219,7 +293,8 @@ class ScoringLightGBM(LightGBM):
 
     def fit(self, features, **kwargs):
         df_features = _convert_features_to_df(features)
-        train_data, val_data = train_test_split(df_features, train_size=self.train_size)
+        train_data, val_data = train_test_split(df_features,
+                                                train_size=self.train_size)
         self.feature_names = list(df_features.columns.drop(self.target))
         super().fit(X=train_data[self.feature_names],
                     y=train_data[self.target],
@@ -235,7 +310,8 @@ class ScoringLightGBM(LightGBM):
             image_scores = []
             for layer_features in image_features:
                 if len(layer_features) > 0:
-                    layer_scores = super().transform(layer_features[self.feature_names])
+                    layer_scores = super().transform(
+                        layer_features[self.feature_names])
                     image_scores.append(list(layer_scores['prediction']))
                 else:
                     image_scores.append([])
@@ -250,6 +326,7 @@ class ScoringLightGBM(LightGBM):
 
 
 class ScoringRandomForest(SklearnRegressor):
+
     def __init__(self, train_size, target, model_params):
         self.train_size = train_size
         self.target = target
@@ -258,7 +335,8 @@ class ScoringRandomForest(SklearnRegressor):
 
     def fit(self, features, **kwargs):
         df_features = _convert_features_to_df(features)
-        train_data, val_data = train_test_split(df_features, train_size=self.train_size)
+        train_data, val_data = train_test_split(df_features,
+                                                train_size=self.train_size)
         self.feature_names = list(df_features.columns.drop(self.target))
         super().fit(X=train_data[self.feature_names],
                     y=train_data[self.target])
@@ -270,7 +348,8 @@ class ScoringRandomForest(SklearnRegressor):
             image_scores = []
             for layer_features in image_features:
                 if len(layer_features) > 0:
-                    layer_scores = super().transform(layer_features[self.feature_names])
+                    layer_scores = super().transform(
+                        layer_features[self.feature_names])
                     image_scores.append(list(layer_scores['prediction']))
                 else:
                     image_scores.append([])
@@ -286,25 +365,37 @@ class ScoringRandomForest(SklearnRegressor):
 
 def weight_regularization_unet(model, regularize, weight_decay_conv2d):
     if regularize:
-        parameter_list = [{'params': model.parameters(), 'weight_decay': weight_decay_conv2d}]
+        parameter_list = [{
+            'params': model.parameters(),
+            'weight_decay': weight_decay_conv2d
+        }]
     else:
         parameter_list = [model.parameters()]
     return parameter_list
 
 
 def callbacks_unet(callbacks_config):
-    experiment_timing = ExperimentTiming(**callbacks_config['experiment_timing'])
+    experiment_timing = ExperimentTiming(
+        **callbacks_config['experiment_timing'])
     model_checkpoints = ModelCheckpoint(**callbacks_config['model_checkpoint'])
-    lr_scheduler = ExponentialLRScheduler(**callbacks_config['exp_lr_scheduler'])
+    lr_scheduler = ExponentialLRScheduler(
+        **callbacks_config['exp_lr_scheduler'])
     training_monitor = TrainingMonitor(**callbacks_config['training_monitor'])
-    validation_monitor = ValidationMonitorSegmentation(**callbacks_config['validation_monitor'])
-    neptune_monitor = NeptuneMonitorSegmentation(**callbacks_config['neptune_monitor'])
+    validation_monitor = ValidationMonitorSegmentation(
+        **callbacks_config['validation_monitor'])
+    neptune_monitor = NeptuneMonitorSegmentation(
+        **callbacks_config['neptune_monitor'])
     early_stopping = EarlyStopping(**callbacks_config['early_stopping'])
 
-    return CallbackList(
-        callbacks=[experiment_timing, training_monitor, validation_monitor,
-                   model_checkpoints, lr_scheduler, early_stopping, neptune_monitor,
-                   ])
+    return CallbackList(callbacks=[
+        experiment_timing,
+        training_monitor,
+        validation_monitor,
+        model_checkpoints,
+        lr_scheduler,
+        early_stopping,
+        neptune_monitor,
+    ])
 
 
 def multiclass_weighted_cross_entropy(output, target, weights_function=None):
@@ -330,7 +421,8 @@ def multiclass_weighted_cross_entropy(output, target, weights_function=None):
         weights = weights_function(target[:, 1:, :, :])
     target = target[:, 0, :, :].long()
 
-    loss_per_pixel = torch.nn.CrossEntropyLoss(reduce=False)(output, target)
+    loss_per_pixel = torch.nn.CrossEntropyLoss(reduction='none')(output,
+                                                                 target)
 
     loss = torch.mean(loss_per_pixel * weights)
     return loss
@@ -344,9 +436,12 @@ def get_weights(target, w0, sigma, imsize):
     distances = target[:, 0, :, :]
     sizes = target[:, 1, :, :]
 
-    w1 = Variable(torch.ones(distances.size()), requires_grad=False)  # TODO: fix it to handle class imbalance
-    if torch.cuda.is_available():
-        w1 = w1.cuda()
+    w1 = Variable(
+        torch.ones(distances.size()),
+        requires_grad=False)  # TODO: fix it to handle class imbalance
+    # if torch.cuda.is_available():
+    #     w1 = w1.cuda()
+    w1 = w1.to(get_device())
     size_weights = _get_size_weights(sizes, C)
 
     distance_weights = _get_distance_weights(distances, w1, w0, sigma)
@@ -357,7 +452,7 @@ def get_weights(target, w0, sigma, imsize):
 
 
 def _get_distance_weights(d, w1, w0, sigma):
-    weights = w1 + w0 * torch.exp(-(d ** 2) / (sigma ** 2))
+    weights = w1 + w0 * torch.exp(-(d**2) / (sigma**2))
     weights[d == 0] = 1
     return weights
 
@@ -373,16 +468,26 @@ def _get_size_weights(sizes, C):
 def _get_loss_variables(w0, sigma, imsize):
     w0 = Variable(torch.Tensor([w0]), requires_grad=False)
     sigma = Variable(torch.Tensor([sigma]), requires_grad=False)
-    C = Variable(torch.sqrt(torch.Tensor([imsize[0] * imsize[1]])) / 2, requires_grad=False)
-    if torch.cuda.is_available():
-        w0 = w0.cuda()
-        sigma = sigma.cuda()
-        C = C.cuda()
+    C = Variable(torch.sqrt(torch.Tensor([imsize[0] * imsize[1]])) / 2,
+                 requires_grad=False)
+    # if torch.cuda.is_available():
+    #     w0 = w0.cuda()
+    #     sigma = sigma.cuda()
+    #     C = C.cuda()
+    device = get_device()
+    w0 = w0.to(device)
+    sigma = sigma.to(device)
+    C = C.to(device)
     return w0, sigma, C
 
 
-def mixed_dice_cross_entropy_loss(output, target, dice_weight=0.5, dice_loss=None,
-                                  cross_entropy_weight=0.5, cross_entropy_loss=None, smooth=0,
+def mixed_dice_cross_entropy_loss(output,
+                                  target,
+                                  dice_weight=0.5,
+                                  dice_loss=None,
+                                  cross_entropy_weight=0.5,
+                                  cross_entropy_loss=None,
+                                  smooth=0,
                                   dice_activation='softmax'):
     """Calculate mixed Dice and Cross Entropy Loss.
 
@@ -413,12 +518,16 @@ def mixed_dice_cross_entropy_loss(output, target, dice_weight=0.5, dice_loss=Non
         cross_entropy_target = dice_target
     if dice_loss is None:
         dice_loss = multiclass_dice_loss
-    return dice_weight * dice_loss(output, dice_target, smooth,
-                                   dice_activation) + cross_entropy_weight * cross_entropy_loss(output,
-                                                                                                cross_entropy_target)
+    return dice_weight * dice_loss(
+        output, dice_target, smooth, dice_activation
+    ) + cross_entropy_weight * cross_entropy_loss(output, cross_entropy_target)
 
 
-def multiclass_dice_loss(output, target, smooth=0, activation='softmax', excluded_classes=[]):
+def multiclass_dice_loss(output,
+                         target,
+                         smooth=0,
+                         activation='softmax',
+                         excluded_classes=[]):
     """Calculate Dice Loss for multiple class output.
 
     Args:

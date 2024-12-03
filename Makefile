@@ -1,5 +1,5 @@
 # create env
-conda env create -f environment.yml
+# conda env create -f environment.yml
 
 # create directories
 mkdir data

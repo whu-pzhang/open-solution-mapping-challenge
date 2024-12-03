@@ -8,40 +8,51 @@ from pycocotools import mask as cocomask
 from pycocotools.coco import COCO
 from skimage.morphology import binary_erosion, rectangle, binary_dilation
 from scipy.ndimage.morphology import distance_transform_edt
-from sklearn.externals import joblib
+import joblib
 
 from .utils import get_logger, add_dropped_objects, label
 
 logger = get_logger()
 
 
-def overlay_masks(data_dir, dataset, target_dir, category_ids, erode=0, dilate=0, is_small=False, num_threads=1,
-                  border_width=0, small_annotations_size=14):
+def overlay_masks(data_dir,
+                  dataset,
+                  target_dir,
+                  category_ids,
+                  erode=0,
+                  dilate=0,
+                  is_small=False,
+                  num_threads=1,
+                  border_width=0,
+                  small_annotations_size=14):
     if is_small:
         suffix = "-small"
     else:
         suffix = ""
     annotation_file_name = "annotation{}.json".format(suffix)
-    annotation_file_path = os.path.join(data_dir, dataset, annotation_file_name)
+    annotation_file_path = os.path.join(data_dir, dataset,
+                                        annotation_file_name)
     coco = COCO(annotation_file_path)
     image_ids = coco.getImgIds()
 
-    _overlay_mask_one_image = partial(overlay_mask_one_image,
-                                      dataset=dataset,
-                                      target_dir=target_dir,
-                                      coco=coco,
-                                      category_ids=category_ids,
-                                      erode=erode,
-                                      dilate=dilate,
-                                      border_width=border_width,
-                                      small_annotations_size=small_annotations_size)
+    _overlay_mask_one_image = partial(
+        overlay_mask_one_image,
+        dataset=dataset,
+        target_dir=target_dir,
+        coco=coco,
+        category_ids=category_ids,
+        erode=erode,
+        dilate=dilate,
+        border_width=border_width,
+        small_annotations_size=small_annotations_size)
 
     process_nr = min(num_threads, len(image_ids))
     with mp.pool.ThreadPool(process_nr) as executor:
         executor.map(_overlay_mask_one_image, image_ids)
 
 
-def overlay_mask_one_image(image_id, dataset, target_dir, coco, category_ids, erode, dilate, border_width,
+def overlay_mask_one_image(image_id, dataset, target_dir, coco, category_ids,
+                           erode, dilate, border_width,
                            small_annotations_size):
     image = coco.loadImgs(image_id)[0]
     image_size = (image["height"], image["width"])
@@ -49,32 +60,38 @@ def overlay_mask_one_image(image_id, dataset, target_dir, coco, category_ids, er
     distances = np.zeros(image_size)
     for category_nr, category_id in enumerate(category_ids):
         if category_id is not None:
-            annotation_ids = coco.getAnnIds(imgIds=image_id, catIds=[category_id, ])
+            annotation_ids = coco.getAnnIds(imgIds=image_id,
+                                            catIds=[
+                                                category_id,
+                                            ])
             annotations = coco.loadAnns(annotation_ids)
 
             if erode < 0 or dilate < 0:
                 raise ValueError('erode and dilate cannot be negative')
 
             if erode == 0:
-                mask, distances = overlay_masks_from_annotations(annotations=annotations,
-                                                                 image_size=image_size,
-                                                                 distances=distances)
+                mask, distances = overlay_masks_from_annotations(
+                    annotations=annotations,
+                    image_size=image_size,
+                    distances=distances)
             elif dilate == 0:
-                mask, _ = overlay_masks_from_annotations(annotations=annotations,
-                                                         image_size=image_size)
-                mask_eroded, distances = overlay_eroded_masks_from_annotations(annotations=annotations,
-                                                                               image_size=image_size,
-                                                                               erode=erode,
-                                                                               distances=distances,
-                                                                               small_annotations_size=small_annotations_size)
+                mask, _ = overlay_masks_from_annotations(
+                    annotations=annotations, image_size=image_size)
+                mask_eroded, distances = overlay_eroded_masks_from_annotations(
+                    annotations=annotations,
+                    image_size=image_size,
+                    erode=erode,
+                    distances=distances,
+                    small_annotations_size=small_annotations_size)
                 mask = add_dropped_objects(mask, mask_eroded)
             else:
-                mask, distances = overlay_eroded_dilated_masks_from_annotations(annotations=annotations,
-                                                                                 image_size=image_size,
-                                                                                 erode=erode,
-                                                                                 dilate=dilate,
-                                                                                 distances=distances,
-                                                                                 small_annotations_size=small_annotations_size)
+                mask, distances = overlay_eroded_dilated_masks_from_annotations(
+                    annotations=annotations,
+                    image_size=image_size,
+                    erode=erode,
+                    dilate=dilate,
+                    distances=distances,
+                    small_annotations_size=small_annotations_size)
             mask_overlayed = np.where(mask, category_nr, mask_overlayed)
 
     sizes = get_size_matrix(mask_overlayed)
@@ -85,9 +102,15 @@ def overlay_mask_one_image(image_id, dataset, target_dir, coco, category_ids, er
         borders_class_id = mask_overlayed.max() + 1
         mask_overlayed = np.where(borders, borders_class_id, mask_overlayed)
 
-    target_filepath = os.path.join(target_dir, dataset, "masks", os.path.splitext(image["file_name"])[0]) + ".png"
-    target_filepath_dist = os.path.join(target_dir, dataset, "distances", os.path.splitext(image["file_name"])[0])
-    target_filepath_sizes = os.path.join(target_dir, dataset, "sizes", os.path.splitext(image["file_name"])[0])
+    target_filepath = os.path.join(target_dir, dataset, "masks",
+                                   os.path.splitext(
+                                       image["file_name"])[0]) + ".png"
+    target_filepath_dist = os.path.join(
+        target_dir, dataset, "distances",
+        os.path.splitext(image["file_name"])[0])
+    target_filepath_sizes = os.path.join(
+        target_dir, dataset, "sizes",
+        os.path.splitext(image["file_name"])[0])
     os.makedirs(os.path.dirname(target_filepath), exist_ok=True)
     os.makedirs(os.path.dirname(target_filepath_dist), exist_ok=True)
     os.makedirs(os.path.dirname(target_filepath_sizes), exist_ok=True)
@@ -99,11 +122,11 @@ def overlay_mask_one_image(image_id, dataset, target_dir, coco, category_ids, er
         logger.info("Failed to save image: {}".format(image_id))
 
 
-
 def overlay_masks_from_annotations(annotations, image_size, distances=None):
     mask = np.zeros(image_size)
     for ann in annotations:
-        rle = cocomask.frPyObjects(ann['segmentation'], image_size[0], image_size[1])
+        rle = cocomask.frPyObjects(ann['segmentation'], image_size[0],
+                                   image_size[1])
         m = cocomask.decode(rle)
 
         for i in range(m.shape[-1]):
@@ -117,10 +140,12 @@ def overlay_masks_from_annotations(annotations, image_size, distances=None):
     return np.where(mask > 0, 1, 0).astype('uint8'), distances
 
 
-def overlay_eroded_masks_from_annotations(annotations, image_size, erode, distances, small_annotations_size):
+def overlay_eroded_masks_from_annotations(annotations, image_size, erode,
+                                          distances, small_annotations_size):
     mask = np.zeros(image_size)
     for ann in annotations:
-        rle = cocomask.frPyObjects(ann['segmentation'], image_size[0], image_size[1])
+        rle = cocomask.frPyObjects(ann['segmentation'], image_size[0],
+                                   image_size[1])
         m = cocomask.decode(rle)
         m = m.reshape(image_size)
         if is_on_border(m, 2):
@@ -132,16 +157,19 @@ def overlay_eroded_masks_from_annotations(annotations, image_size, erode, distan
     return np.where(mask > 0, 1, 0).astype('uint8'), distances
 
 
-def overlay_eroded_dilated_masks_from_annotations(annotations, image_size, erode, dilate, distances,
-                                                   small_annotations_size):
+def overlay_eroded_dilated_masks_from_annotations(annotations, image_size,
+                                                  erode, dilate, distances,
+                                                  small_annotations_size):
     mask = np.zeros(image_size)
     for ann in annotations:
-        rle = cocomask.frPyObjects(ann['segmentation'], image_size[0], image_size[1])
+        rle = cocomask.frPyObjects(ann['segmentation'], image_size[0],
+                                   image_size[1])
         m = cocomask.decode(rle)
         m = m.reshape(image_size)
         if is_on_border(m, 2):
             continue
-        m_ = get_simple_eroded_dilated_mask(m, erode, dilate, small_annotations_size)
+        m_ = get_simple_eroded_dilated_mask(m, erode, dilate,
+                                            small_annotations_size)
         if distances is not None:
             distances = update_distances(distances, m_)
         mask += m_
@@ -176,7 +204,8 @@ def get_simple_eroded_mask(mask, selem_size, small_annotations_size):
     return mask_eroded
 
 
-def get_simple_eroded_dilated_mask(mask, erode_selem_size, dilate_selem_size, small_annotations_size):
+def get_simple_eroded_dilated_mask(mask, erode_selem_size, dilate_selem_size,
+                                   small_annotations_size):
     if mask.sum() > small_annotations_size**2:
         selem = rectangle(erode_selem_size, erode_selem_size)
         mask_ = binary_erosion(mask, selem=selem)
@@ -194,5 +223,7 @@ def get_size_matrix(mask):
         sizes = np.where(labeled == label_nr, label_size, sizes)
     return sizes
 
+
 def is_on_border(mask, border_width):
-    return not np.any(mask[border_width:-border_width, border_width:-border_width])
+    return not np.any(mask[border_width:-border_width,
+                           border_width:-border_width])

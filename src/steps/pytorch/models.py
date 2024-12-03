@@ -11,11 +11,13 @@ from torch.nn import init
 from ..base import BaseTransformer
 from ..utils import get_logger
 from .utils import save_model
+from ...utils import get_device
 
 logger = get_logger()
 
 
 class Model(BaseTransformer):
+
     def __init__(self, architecture_config, training_config, callbacks_config):
         super().__init__()
         self.architecture_config = architecture_config
@@ -28,6 +30,8 @@ class Model(BaseTransformer):
         self.callbacks = None
         self.validation_loss = {}
 
+        self.device = get_device()
+
     @property
     def output_names(self):
         return [name for (name, func, weight) in self.loss_function]
@@ -37,7 +41,8 @@ class Model(BaseTransformer):
         weights_init_config = self.architecture_config['weights_init']
 
         if weights_init_config['function'] == 'normal':
-            weights_init_func = partial(init_weights_normal, **weights_init_config['params'])
+            weights_init_func = partial(init_weights_normal,
+                                        **weights_init_config['params'])
         elif weights_init_config['function'] == 'xavier':
             weights_init_func = init_weights_xavier
         elif weights_init_config['function'] == 'he':
@@ -52,8 +57,9 @@ class Model(BaseTransformer):
 
         self.model = nn.DataParallel(self.model)
 
-        if torch.cuda.is_available():
-            self.model = self.model.cuda()
+        # if torch.cuda.is_available():
+        #     self.model = self.model.cuda()
+        self.model = self.model.to(self.device)
 
         self.callbacks.set_params(self, validation_datagen=validation_datagen)
         self.callbacks.on_train_begin()
@@ -77,16 +83,20 @@ class Model(BaseTransformer):
         X = data[0]
         targets_tensors = data[1:]
 
-        if torch.cuda.is_available():
-            X = Variable(X).cuda()
-            targets_var = []
-            for target_tensor in targets_tensors:
-                targets_var.append(Variable(target_tensor).cuda())
-        else:
-            X = Variable(X)
-            targets_var = []
-            for target_tensor in targets_tensors:
-                targets_var.append(Variable(target_tensor))
+        # if torch.cuda.is_available():
+        #     X = Variable(X).cuda()
+        #     targets_var = []
+        #     for target_tensor in targets_tensors:
+        #         targets_var.append(Variable(target_tensor).cuda())
+        # else:
+        #     X = Variable(X)
+        #     targets_var = []
+        #     for target_tensor in targets_tensors:
+        #         targets_var.append(Variable(target_tensor))
+        X = Variable(X).to(self.device)
+        targets_var = []
+        for target_tensor in targets_tensors:
+            targets_var.append(Variable(target_tensor).to(self.device))
 
         self.optimizer.zero_grad()
         outputs_batch = self.model(X)
@@ -100,11 +110,15 @@ class Model(BaseTransformer):
         #                                                                    len(self.loss_function))
 
         if len(self.output_names) == 1:
-            for (name, loss_function, weight), target in zip(self.loss_function, targets_var):
+            for (name, loss_function,
+                 weight), target in zip(self.loss_function, targets_var):
                 batch_loss = loss_function(outputs_batch, target) * weight
         else:
-            for (name, loss_function, weight), output, target in zip(self.loss_function, outputs_batch, targets_var):
-                partial_batch_losses[name] = loss_function(output, target) * weight
+            for (name, loss_function,
+                 weight), output, target in zip(self.loss_function,
+                                                outputs_batch, targets_var):
+                partial_batch_losses[name] = loss_function(output,
+                                                           target) * weight
             batch_loss = sum(partial_batch_losses.values())
         partial_batch_losses['sum'] = batch_loss
         batch_loss.backward()
@@ -123,14 +137,16 @@ class Model(BaseTransformer):
             else:
                 X = data
 
-            if torch.cuda.is_available():
-                X = Variable(X, volatile=True).cuda()
-            else:
-                X = Variable(X, volatile=True)
-
-            outputs_batch = self.model(X)
+            # if torch.cuda.is_available():
+            #     X = Variable(X, volatile=True).cuda()
+            # else:
+            #     X = Variable(X, volatile=True)
+            X = Variable(X).to(self.device)
+            with torch.no_grad():
+                outputs_batch = self.model(X)
             if len(self.output_names) == 1:
-                outputs.setdefault(self.output_names[0], []).append(outputs_batch.data.cpu().numpy())
+                outputs.setdefault(self.output_names[0],
+                                   []).append(outputs_batch.data.cpu().numpy())
             else:
                 for name, output in zip(self.output_names, outputs_batch):
                     output_ = output.data.cpu().numpy()
@@ -138,7 +154,10 @@ class Model(BaseTransformer):
             if batch_id == steps:
                 break
         self.model.train()
-        outputs = {'{}_prediction'.format(name): np.vstack(outputs_) for name, outputs_ in outputs.items()}
+        outputs = {
+            '{}_prediction'.format(name): np.vstack(outputs_)
+            for name, outputs_ in outputs.items()
+        }
         return outputs
 
     def transform(self, datagen, validation_datagen=None):
@@ -151,12 +170,18 @@ class Model(BaseTransformer):
         if not isinstance(self.model, nn.DataParallel):
             self.model = nn.DataParallel(self.model)
 
-        if torch.cuda.is_available():
-            self.model.cpu()
-            self.model.load_state_dict(torch.load(filepath))
-            self.model = self.model.cuda()
-        else:
-            self.model.load_state_dict(torch.load(filepath, map_location=lambda storage, loc: storage))
+        # if torch.cuda.is_available():
+        #     self.model.cpu()
+        #     self.model.load_state_dict(torch.load(filepath))
+        #     self.model = self.model.cuda()
+        # else:
+        #     self.model.load_state_dict(
+        #         torch.load(filepath,
+        #                    map_location=lambda storage, loc: storage))
+        self.model.cpu()
+        self.model.load_state_dict(torch.load(filepath, map_location='cpu'))
+        self.model = self.model.to(self.device)
+
         return self
 
     def save(self, filepath):
@@ -172,6 +197,7 @@ class Model(BaseTransformer):
 
 
 class PyTorchBasic(nn.Module):
+
     def _flatten_features(self, in_size, features):
         f = features(Variable(torch.ones(1, *in_size)))
         return int(np.prod(f.size()[1:]))

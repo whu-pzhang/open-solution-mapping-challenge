@@ -3,6 +3,8 @@ import numpy as np
 import torch
 from imgaug import augmenters as iaa
 
+from ...utils import get_device
+
 
 def denormalize_img(img):
     mean = [0.28201905, 0.37246801, 0.42341868]
@@ -66,12 +68,17 @@ def overlay_keypoints(img, pred_keypoints, true_keypoints, bin_nr):
 
 def save_model(model, path):
     model.eval()
-    if torch.cuda.is_available():
-        model.cpu()
-        torch.save(model.state_dict(), path)
-        model.cuda()
-    else:
-        torch.save(model.state_dict(), path)
+    device = model.device
+    # if torch.cuda.is_available():
+    #     model.cpu()
+    #     torch.save(model.state_dict(), path)
+    #     model.cuda()
+    # else:
+    #     torch.save(model.state_dict(), path)
+    model.cpu()
+    torch.save(model.state_dict(), path)
+    model.to(device)
+
     model.train()
 
 
@@ -106,6 +113,7 @@ def sigmoid(x):
 
 
 class ImgAug:
+
     def __init__(self, augmenters):
         if not isinstance(augmenters, list):
             augmenters = [augmenters]
@@ -114,7 +122,8 @@ class ImgAug:
 
     def _pre_call_hook(self):
         seq = iaa.Sequential(self.augmenters)
-        seq.reseed()
+        # seq.reseed()
+        seq.seed_()
         self.seq_det = seq.to_deterministic()
 
     def transform(self, *images):

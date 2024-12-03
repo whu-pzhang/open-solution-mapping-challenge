@@ -28,8 +28,9 @@ from .steps.base import BaseTransformer
 def init_logger():
     logger = logging.getLogger('mapping-challenge')
     logger.setLevel(logging.INFO)
-    message_format = logging.Formatter(fmt='%(asctime)s %(name)s >>> %(message)s',
-                                       datefmt='%Y-%m-%d %H-%M-%S')
+    message_format = logging.Formatter(
+        fmt='%(asctime)s %(name)s >>> %(message)s',
+        datefmt='%Y-%m-%d %H-%M-%S')
 
     # console handler for validation info
     ch_va = logging.StreamHandler(sys.stdout)
@@ -73,7 +74,13 @@ def decompose(labeled):
         return masks
 
 
-def create_annotations(meta, predictions, logger, category_ids, category_layers, save=False, experiment_dir='./'):
+def create_annotations(meta,
+                       predictions,
+                       logger,
+                       category_ids,
+                       category_layers,
+                       save=False,
+                       experiment_dir='./'):
     """
 
     Args:
@@ -93,19 +100,27 @@ def create_annotations(meta, predictions, logger, category_ids, category_layers,
     annotations = []
     logger.info('Creating annotations')
     category_layers_inds = np.cumsum(category_layers)
-    for image_id, (prediction, image_scores) in zip(meta["ImageId"].values, predictions):
-        for category_ind, (category_instances, category_scores) in enumerate(zip(prediction, image_scores)):
-            category_nr = np.searchsorted(category_layers_inds, category_ind, side='right')
+    for image_id, (prediction, image_scores) in zip(meta["ImageId"].values,
+                                                    predictions):
+        for category_ind, (category_instances, category_scores) in enumerate(
+                zip(prediction, image_scores)):
+            category_nr = np.searchsorted(category_layers_inds,
+                                          category_ind,
+                                          side='right')
             if category_ids[category_nr] != None:
                 masks = decompose(category_instances)
-                for mask_nr, (mask, score) in enumerate(zip(masks, category_scores)):
+                for mask_nr, (mask,
+                              score) in enumerate(zip(masks, category_scores)):
                     annotation = {}
                     annotation["image_id"] = int(image_id)
                     annotation["category_id"] = category_ids[category_nr]
                     annotation["score"] = score
-                    annotation["segmentation"] = rle_from_binary(mask.astype('uint8'))
-                    annotation['segmentation']['counts'] = annotation['segmentation']['counts'].decode("UTF-8")
-                    annotation["bbox"] = bounding_box_from_rle(rle_from_binary(mask.astype('uint8')))
+                    annotation["segmentation"] = rle_from_binary(
+                        mask.astype('uint8'))
+                    annotation['segmentation']['counts'] = annotation[
+                        'segmentation']['counts'].decode("UTF-8")
+                    annotation["bbox"] = bounding_box_from_rle(
+                        rle_from_binary(mask.astype('uint8')))
                     annotations.append(annotation)
     if save:
         submission_filepath = os.path.join(experiment_dir, 'submission.json')
@@ -129,16 +144,18 @@ def bounding_box_from_rle(rle):
 
 def read_config(config_path):
     with open(config_path) as f:
-        config = yaml.load(f)
+        config = yaml.load(f, Loader=yaml.FullLoader)
     return AttrDict(config)
 
 
-def generate_metadata(data_dir,
-                      meta_dir,
-                      masks_overlayed_prefix,
-                      process_train_data=True,
-                      process_validation_data=True,
-                      ):
+def generate_metadata(
+    data_dir,
+    meta_dir,
+    masks_overlayed_prefix,
+    process_train_data=True,
+    process_validation_data=True,
+):
+
     def _generate_metadata(dataset):
         assert dataset in ["train", "val"], "Unknown dataset!"
 
@@ -150,16 +167,22 @@ def generate_metadata(data_dir,
         for file_path in glob.glob('{}/*'.format(meta_dir)):
             if ntpath.basename(file_path).startswith(masks_overlayed_prefix):
                 masks_overlayed_dirs.append(file_path)
-                mask_overlayed_suffix.append(ntpath.basename(file_path).replace(masks_overlayed_prefix, ''))
+                mask_overlayed_suffix.append(
+                    ntpath.basename(file_path).replace(masks_overlayed_prefix,
+                                                       ''))
         df_dict = defaultdict(lambda: [])
 
         annotation_path = os.path.join(data_dir, dataset, 'annotation.json')
 
         with open(annotation_path) as f:
             annotation = json.load(f)
-        file_name2img_id = {img['file_name']: img['id'] for img in annotation['images']}
+        file_name2img_id = {
+            img['file_name']: img['id']
+            for img in annotation['images']
+        }
 
-        for image_file_path in tqdm(sorted(glob.glob('{}/*'.format(images_path)))):
+        for image_file_path in tqdm(
+                sorted(glob.glob('{}/*'.format(images_path)))):
             image_file_name = ntpath.basename(image_file_path)
             if dataset == "test_images":
                 image_id = image_file_name.split('.')[0]
@@ -180,30 +203,39 @@ def generate_metadata(data_dir,
             df_dict['is_valid'].append(is_valid)
             df_dict['n_buildings'].append(n_buildings)
 
-            for mask_dir, mask_dir_suffix in zip(masks_overlayed_dirs, mask_overlayed_suffix):
-                file_path_mask = os.path.join(mask_dir, dataset, "masks",
-                                              '{}.png'.format(image_file_name.split('.')[0]))
-                df_dict['file_path_mask' + mask_dir_suffix].append(file_path_mask)
+            for mask_dir, mask_dir_suffix in zip(masks_overlayed_dirs,
+                                                 mask_overlayed_suffix):
+                file_path_mask = os.path.join(
+                    mask_dir, dataset, "masks",
+                    '{}.png'.format(image_file_name.split('.')[0]))
+                df_dict['file_path_mask' +
+                        mask_dir_suffix].append(file_path_mask)
 
         return pd.DataFrame.from_dict(df_dict)
 
     metadata = pd.DataFrame()
     if process_train_data:
         train_metadata = _generate_metadata(dataset="train")
-        metadata = metadata.append(train_metadata, ignore_index=True)
+        # metadata = metadata.append(train_metadata, ignore_index=True)
+        metadata = pd.concat([metadata, train_metadata], ignore_index=True)
     if process_validation_data:
         validation_metadata = _generate_metadata(dataset="val")
-        metadata = metadata.append(validation_metadata, ignore_index=True)
+        # metadata = metadata.append(validation_metadata, ignore_index=True)
+        metadata = pd.concat([metadata, validation_metadata],
+                             ignore_index=True)
 
     if not (process_train_data or process_validation_data):
-        raise ValueError('At least one of train_data or validation_data has to be set to True')
+        raise ValueError(
+            'At least one of train_data or validation_data has to be set to True'
+        )
 
     return metadata
 
 
 def generate_inference_metadata(images_dir):
     df_dict = defaultdict(lambda: [])
-    for image_id, image_file_path in tqdm(enumerate(sorted(glob.glob('{}/*'.format(images_dir))))):
+    for image_id, image_file_path in tqdm(
+            enumerate(sorted(glob.glob('{}/*'.format(images_dir))))):
         n_buildings = None
         df_dict['ImageId'].append(image_id)
         df_dict['file_path_image'].append(image_file_path)
@@ -216,10 +248,12 @@ def generate_inference_metadata(images_dir):
 
 
 def check_env_vars():
-    assert os.getenv('NEPTUNE_API_TOKEN'), """You must put your Neptune API token in the \
+    assert os.getenv(
+        'NEPTUNE_API_TOKEN'), """You must put your Neptune API token in the \
 NEPTUNE_API_TOKEN env variable. You should run:
     $ export NEPTUNE_API_TOKEN=your_neptune_api_token"""
-    assert os.getenv('CONFIG_PATH'), """You must specify path to the config file in \
+    assert os.getenv(
+        'CONFIG_PATH'), """You must specify path to the config file in \
 CONFIG_PATH env variable. For example run:
     $ export CONFIG_PATH=neptune.yaml"""
 
@@ -305,14 +339,16 @@ def generate_data_frame_chunks(meta, chunk_size):
         yield meta_chunk
 
 
-def coco_evaluation(gt_filepath, prediction_filepath, image_ids, category_ids, small_annotations_size):
+def coco_evaluation(gt_filepath, prediction_filepath, image_ids, category_ids,
+                    small_annotations_size):
     coco = COCO(gt_filepath)
     coco_results = coco.loadRes(prediction_filepath)
     cocoEval = COCOeval(coco, coco_results)
     cocoEval.params.imgIds = image_ids
     cocoEval.params.catIds = category_ids
-    cocoEval.params.areaRng = [[0 ** 2, 1e5 ** 2], [0 ** 2, small_annotations_size ** 2],
-                               [small_annotations_size ** 2, 1e5 ** 2]]
+    cocoEval.params.areaRng = [[0**2, 1e5**2],
+                               [0**2, small_annotations_size**2],
+                               [small_annotations_size**2, 1e5**2]]
     cocoEval.params.areaRngLbl = ['all', 'small', 'large']
     cocoEval.evaluate()
     cocoEval.accumulate()
@@ -322,7 +358,8 @@ def coco_evaluation(gt_filepath, prediction_filepath, image_ids, category_ids, s
 
 
 def denormalize_img(image, mean, std):
-    return image * np.array(std).reshape(3, 1, 1) + np.array(mean).reshape(3, 1, 1)
+    return image * np.array(std).reshape(3, 1, 1) + np.array(mean).reshape(
+        3, 1, 1)
 
 
 def label(mask):
@@ -340,7 +377,9 @@ def add_dropped_objects(original, processed):
 
 
 def make_apply_transformer(func, output_name='output', apply_on=None):
+
     class StaticApplyTransformer(BaseTransformer):
+
         def transform(self, *args, **kwargs):
             self.check_input(*args, **kwargs)
 
@@ -350,7 +389,8 @@ def make_apply_transformer(func, output_name='output', apply_on=None):
                 iterator = zip(*args, *[kwargs[key] for key in apply_on])
 
             output = []
-            for func_args in tqdm(iterator, total=self.get_arg_length(*args, **kwargs)):
+            for func_args in tqdm(iterator,
+                                  total=self.get_arg_length(*args, **kwargs)):
                 output.append(func(*func_args))
             return {output_name: output}
 
@@ -390,7 +430,9 @@ def make_apply_transformer(func, output_name='output', apply_on=None):
 
 
 def make_apply_transformer_stream(func, output_name='output', apply_on=None):
+
     class StaticApplyTransformerStream(BaseTransformer):
+
         def transform(self, *args, **kwargs):
             self.check_input(*args, **kwargs)
             return {output_name: self._transform(*args, **kwargs)}
@@ -424,3 +466,13 @@ def reseed(augmenter_sequence, deterministic=True):
         if deterministic:
             aug.deterministic = True
     return augmenter_sequence
+
+
+def get_device():
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
+    return device

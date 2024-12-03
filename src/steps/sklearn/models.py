@@ -5,7 +5,7 @@ from attrdict import AttrDict
 #from catboost import CatBoostClassifier
 from sklearn import ensemble
 from sklearn import svm
-from sklearn.externals import joblib
+import joblib
 from xgboost import XGBClassifier
 
 from ..base import BaseTransformer
@@ -15,6 +15,7 @@ logger = get_logger()
 
 
 class SklearnClassifier(BaseTransformer):
+
     def __init__(self, estimator):
         self.estimator = estimator
 
@@ -28,6 +29,7 @@ class SklearnClassifier(BaseTransformer):
 
 
 class SklearnRegressor(BaseTransformer):
+
     def __init__(self, estimator):
         self.estimator = estimator
 
@@ -41,6 +43,7 @@ class SklearnRegressor(BaseTransformer):
 
 
 class SklearnTransformer(BaseTransformer):
+
     def __init__(self, estimator):
         self.estimator = estimator
 
@@ -54,6 +57,7 @@ class SklearnTransformer(BaseTransformer):
 
 
 class SklearnPipeline(BaseTransformer):
+
     def __init__(self, estimator):
         self.estimator = estimator
 
@@ -67,31 +71,34 @@ class SklearnPipeline(BaseTransformer):
 
 
 class LightGBM(BaseTransformer):
+
     def __init__(self, model_params, training_params):
         self.model_params = model_params
         self.training_params = AttrDict(training_params)
         self.evaluation_function = None
 
-    def fit(self, X, y, X_valid, y_valid, feature_names, categorical_features, **kwargs):
-        train = lgb.Dataset(X, label=y,
+    def fit(self, X, y, X_valid, y_valid, feature_names, categorical_features,
+            **kwargs):
+        train = lgb.Dataset(X,
+                            label=y,
                             feature_name=feature_names,
-                            categorical_feature=categorical_features
-                            )
-        valid = lgb.Dataset(X_valid, label=y_valid,
+                            categorical_feature=categorical_features)
+        valid = lgb.Dataset(X_valid,
+                            label=y_valid,
                             feature_name=feature_names,
-                            categorical_feature=categorical_features
-                            )
+                            categorical_feature=categorical_features)
 
         evaluation_results = {}
-        self.estimator = lgb.train(self.model_params,
-                                   train,
-                                   valid_sets=[train, valid],
-                                   valid_names=['train', 'valid'],
-                                   evals_result=evaluation_results,
-                                   num_boost_round=self.training_params.number_boosting_rounds,
-                                   early_stopping_rounds=self.training_params.early_stopping_rounds,
-                                   verbose_eval=10,
-                                   feval=self.evaluation_function)
+        self.estimator = lgb.train(
+            self.model_params,
+            train,
+            valid_sets=[train, valid],
+            valid_names=['train', 'valid'],
+            evals_result=evaluation_results,
+            num_boost_round=self.training_params.number_boosting_rounds,
+            early_stopping_rounds=self.training_params.early_stopping_rounds,
+            verbose_eval=10,
+            feval=self.evaluation_function)
         return self
 
     def transform(self, X, y=None, **kwargs):
@@ -100,6 +107,7 @@ class LightGBM(BaseTransformer):
 
 
 class MultilabelEstimator(BaseTransformer):
+
     def __init__(self, label_nr, **kwargs):
         self.label_nr = label_nr
         self.estimators = self._get_estimators(**kwargs)
@@ -136,24 +144,26 @@ class MultilabelEstimator(BaseTransformer):
         return self
 
     def save(self, filepath):
-        params = {'label_nr': self.label_nr,
-                  'estimators': self.estimators}
+        params = {'label_nr': self.label_nr, 'estimators': self.estimators}
         joblib.dump(params, filepath)
 
 
 class LogisticRegressionMultilabel(MultilabelEstimator):
+
     @property
     def estimator(self):
         return lr.LogisticRegression
 
 
 class SVCMultilabel(MultilabelEstimator):
+
     @property
     def estimator(self):
         return svm.SVC
 
 
 class LinearSVC_proba(svm.LinearSVC):
+
     def __platt_func(self, x):
         return 1 / (1 + np.exp(-x))
 
@@ -161,7 +171,8 @@ class LinearSVC_proba(svm.LinearSVC):
         f = np.vectorize(self.__platt_func)
         raw_predictions = self.decision_function(X)
         platt_predictions = f(raw_predictions).reshape(-1, 1)
-        prob_positive = platt_predictions / platt_predictions.sum(axis=1)[:, None]
+        prob_positive = platt_predictions / platt_predictions.sum(axis=1)[:,
+                                                                          None]
         prob_negative = 1.0 - prob_positive
         probs = np.hstack([prob_negative, prob_positive])
         print(prob_positive)
@@ -169,24 +180,28 @@ class LinearSVC_proba(svm.LinearSVC):
 
 
 class LinearSVCMultilabel(MultilabelEstimator):
+
     @property
     def estimator(self):
         return LinearSVC_proba
 
 
 class RandomForestMultilabel(MultilabelEstimator):
+
     @property
     def estimator(self):
         return ensemble.RandomForestClassifier
 
 
 class CatboostClassifierMultilabel(MultilabelEstimator):
+
     @property
     def estimator(self):
         return CatBoostClassifier
 
 
 class XGBoostClassifierMultilabel(MultilabelEstimator):
+
     @property
     def estimator(self):
         return XGBClassifier
@@ -202,6 +217,8 @@ def make_transformer(estimator, mode='classifier'):
     elif mode == 'pipeline':
         transformer = SklearnPipeline(estimator)
     else:
-        raise NotImplementedError("""Only classifier, regressor and transformer modes are available""")
+        raise NotImplementedError(
+            """Only classifier, regressor and transformer modes are available"""
+        )
 
     return transformer

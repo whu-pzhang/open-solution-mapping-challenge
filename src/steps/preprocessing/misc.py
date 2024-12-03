@@ -1,9 +1,10 @@
-from sklearn.externals import joblib
+import joblib
 
 from ..base import BaseTransformer
 
 
 class XYSplit(BaseTransformer):
+
     def __init__(self, x_columns, y_columns):
         self.x_columns = x_columns
         self.y_columns = y_columns
@@ -15,8 +16,7 @@ class XYSplit(BaseTransformer):
         else:
             y = None
 
-        return {'X': X,
-                'y': y}
+        return {'X': X, 'y': y}
 
     def load(self, filepath):
         params = joblib.load(filepath)
@@ -25,7 +25,5 @@ class XYSplit(BaseTransformer):
         return self
 
     def save(self, filepath):
-        params = {'x_columns': self.x_columns,
-                  'y_columns': self.y_columns
-                  }
+        params = {'x_columns': self.x_columns, 'y_columns': self.y_columns}
         joblib.dump(params, filepath)

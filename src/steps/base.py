@@ -4,7 +4,7 @@ import shutil
 
 import numpy as np
 from scipy import sparse
-from sklearn.externals import joblib
+import joblib
 
 from .utils import view_graph, plot_graph, get_logger, initialize_logger
 
@@ -13,9 +13,20 @@ logger = get_logger()
 
 
 class Step:
-    def __init__(self, name, transformer, input_steps=[], input_data=[], adapter=None,
-                 cache_dirpath=None, is_trainable=False, cache_output=False, save_output=False, load_saved_output=False,
-                 save_graph=False, force_fitting=False):
+
+    def __init__(self,
+                 name,
+                 transformer,
+                 input_steps=[],
+                 input_data=[],
+                 adapter=None,
+                 cache_dirpath=None,
+                 is_trainable=False,
+                 cache_output=False,
+                 save_output=False,
+                 load_saved_output=False,
+                 save_graph=False,
+                 force_fitting=False):
         self.name = name
 
         self.transformer = transformer
@@ -34,29 +45,36 @@ class Step:
         self._prep_cache(cache_dirpath)
 
         if save_graph:
-            graph_filepath = os.path.join(self.cache_dirpath, '{}_graph.json'.format(self.name))
+            graph_filepath = os.path.join(self.cache_dirpath,
+                                          '{}_graph.json'.format(self.name))
             logger.info('Saving graph to {}'.format(graph_filepath))
             joblib.dump(self.graph_info, graph_filepath)
 
     def _copy_transformer(self, step, name, dirpath):
         self.transformer = self.transformer.transformer
 
-        original_filepath = os.path.join(step.cache_dirpath, 'transformers', step.name)
+        original_filepath = os.path.join(step.cache_dirpath, 'transformers',
+                                         step.name)
         copy_filepath = os.path.join(dirpath, 'transformers', name)
-        logger.info('copying transformer from {} to {}'.format(original_filepath, copy_filepath))
+        logger.info('copying transformer from {} to {}'.format(
+            original_filepath, copy_filepath))
         shutil.copyfile(original_filepath, copy_filepath)
 
     def _prep_cache(self, cache_dirpath):
         for dirname in ['transformers', 'outputs', 'tmp']:
             os.makedirs(os.path.join(cache_dirpath, dirname), exist_ok=True)
 
-        self.cache_dirpath_transformers = os.path.join(cache_dirpath, 'transformers')
+        self.cache_dirpath_transformers = os.path.join(cache_dirpath,
+                                                       'transformers')
         self.save_dirpath_outputs = os.path.join(cache_dirpath, 'outputs')
         self.save_dirpath_tmp = os.path.join(cache_dirpath, 'tmp')
 
-        self.cache_filepath_step_transformer = os.path.join(self.cache_dirpath_transformers, self.name)
-        self.save_filepath_step_output = os.path.join(self.save_dirpath_outputs, '{}'.format(self.name))
-        self.save_filepath_step_tmp = os.path.join(self.save_dirpath_tmp, '{}'.format(self.name))
+        self.cache_filepath_step_transformer = os.path.join(
+            self.cache_dirpath_transformers, self.name)
+        self.save_filepath_step_output = os.path.join(
+            self.save_dirpath_outputs, '{}'.format(self.name))
+        self.save_filepath_step_tmp = os.path.join(self.save_dirpath_tmp,
+                                                   '{}'.format(self.name))
         self._cached_output = None
 
     def clean_cache(self):
@@ -78,7 +96,8 @@ class Step:
     @property
     def transformer_is_cached(self):
         if isinstance(self.transformer, Step):
-            self._copy_transformer(self.transformer, self.name, self.cache_dirpath)
+            self._copy_transformer(self.transformer, self.name,
+                                   self.cache_dirpath)
         return os.path.exists(self.cache_filepath_step_transformer)
 
     @property
@@ -119,8 +138,10 @@ class Step:
                 logger.info('step {} transforming...'.format(self.name))
                 step_output_data = self.transformer.transform(**step_inputs)
             else:
-                logger.info('step {} fitting and transforming...'.format(self.name))
-                step_output_data = self.transformer.fit_transform(**step_inputs)
+                logger.info('step {} fitting and transforming...'.format(
+                    self.name))
+                step_output_data = self.transformer.fit_transform(
+                    **step_inputs)
                 logger.info('step {} saving transformer...'.format(self.name))
                 self.transformer.save(self.cache_filepath_step_transformer)
         else:
@@ -199,7 +220,10 @@ class Step:
                 else:
                     raise ValueError('wrong mapping specified')
 
-                raw_inputs = [step_inputs[step_name][step_var] for step_name, step_var in step_mapping]
+                raw_inputs = [
+                    step_inputs[step_name][step_var]
+                    for step_name, step_var in step_mapping
+                ]
                 adapted_steps[adapted_name] = func(raw_inputs)
         return adapted_steps
 
@@ -224,8 +248,7 @@ class Step:
 
     @property
     def graph_info(self):
-        graph_info = {'edges': set(),
-                      'nodes': set()}
+        graph_info = {'edges': set(), 'nodes': set()}
 
         graph_info = self._get_graph_info(graph_info)
 
@@ -252,6 +275,7 @@ class Step:
 
 
 class BaseTransformer:
+
     def fit(self, *args, **kwargs):
         return self
 
@@ -270,6 +294,7 @@ class BaseTransformer:
 
 
 class MockTransformer(BaseTransformer):
+
     def fit(self, *args, **kwargs):
         return self
 
@@ -282,6 +307,7 @@ class MockTransformer(BaseTransformer):
 
 
 class Dummy(BaseTransformer):
+
     def transform(self, **kwargs):
         return kwargs
 

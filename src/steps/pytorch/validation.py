@@ -4,22 +4,26 @@ import torch.nn.functional as F
 from sklearn.metrics import accuracy_score
 from torch.autograd import Variable
 
+from ...utils import get_device
+
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth=0, eps = 1e-7):
+
+    def __init__(self, smooth=0, eps=1e-7):
         super(DiceLoss, self).__init__()
         self.smooth = smooth
         self.eps = eps
 
     def forward(self, output, target):
         return 1 - (2 * torch.sum(output * target) + self.smooth) / (
-                    torch.sum(output) + torch.sum(target) + self.smooth + self.eps)
+            torch.sum(output) + torch.sum(target) + self.smooth + self.eps)
 
 
 def segmentation_loss(output, target, weight_bce=1.0, weight_dice=1.0):
     bce = nn.BCEWithLogitsLoss()
     dice = DiceLoss()
-    return weight_bce * bce(output, target) + weight_dice * dice(output, target)
+    return weight_bce * bce(output, target) + weight_dice * dice(
+        output, target)
 
 
 def multiclass_segmentation_loss(output, target):
@@ -51,28 +55,38 @@ def multi_output_cross_entropy(outputs, targets):
 def score_model(model, loss_function, datagen):
     batch_gen, steps = datagen
     partial_batch_losses = {}
+
+    device = get_device()
+
     for batch_id, data in enumerate(batch_gen):
         X = data[0]
         targets_tensors = data[1:]
 
-        if torch.cuda.is_available():
-            X = Variable(X, volatile=True).cuda()
-            targets_var = []
-            for target_tensor in targets_tensors:
-                targets_var.append(Variable(target_tensor, volatile=True).cuda())
-        else:
-            X = Variable(X, volatile=True)
-            targets_var = []
-            for target_tensor in targets_tensors:
-                targets_var.append(Variable(target_tensor, volatile=True))
-
-        outputs = model(X)
+        # if torch.cuda.is_available():
+        #     X = Variable(X, volatile=True).cuda()
+        #     targets_var = []
+        #     for target_tensor in targets_tensors:
+        #         targets_var.append(Variable(target_tensor, volatile=True).cuda())
+        # else:
+        #     X = Variable(X, volatile=True)
+        #     targets_var = []
+        #     for target_tensor in targets_tensors:
+        #         targets_var.append(Variable(target_tensor, volatile=True))
+        X = Variable(X).to(device)
+        targets_var = []
+        for target_tensor in targets_tensors:
+            targets_var.append(Variable(target_tensor).to(device))
+        with torch.no_grad():
+            outputs = model(X)
         if len(loss_function) == 1:
-            for (name, loss_function_one, weight), target in zip(loss_function, targets_var):
+            for (name, loss_function_one,
+                 weight), target in zip(loss_function, targets_var):
                 loss_sum = loss_function_one(outputs, target) * weight
         else:
             batch_losses = []
-            for (name, loss_function_one, weight), output, target in zip(loss_function, outputs, targets_var):
+            for (name, loss_function_one,
+                 weight), output, target in zip(loss_function, outputs,
+                                                targets_var):
                 loss = loss_function_one(output, target) * weight
                 batch_losses.append(loss)
                 partial_batch_losses.setdefault(name, []).append(loss)
@@ -80,7 +94,10 @@ def score_model(model, loss_function, datagen):
         partial_batch_losses.setdefault('sum', []).append(loss_sum)
         if batch_id == steps:
             break
-    average_losses = {name: sum(losses) / steps for name, losses in partial_batch_losses.items()}
+    average_losses = {
+        name: sum(losses) / steps
+        for name, losses in partial_batch_losses.items()
+    }
     return average_losses
 
 

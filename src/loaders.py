@@ -10,7 +10,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
-from sklearn.externals import joblib
+import joblib
 from skimage.transform import rotate
 from scipy.stats import gmean
 
@@ -22,8 +22,8 @@ from .pipeline_config import MEAN, STD
 
 
 class MetadataImageSegmentationDataset(Dataset):
-    def __init__(self, X, y,
-                 image_transform, image_augment_with_target,
+
+    def __init__(self, X, y, image_transform, image_augment_with_target,
                  mask_transform, image_augment):
         super().__init__()
         self.X = X
@@ -72,9 +72,9 @@ class MetadataImageSegmentationDataset(Dataset):
 
 
 class MetadataImageSegmentationTTA(Dataset):
-    def __init__(self, X, tta_params,
-                 image_transform, image_augment_with_target,
-                 mask_transform, image_augment):
+
+    def __init__(self, X, tta_params, image_transform,
+                 image_augment_with_target, mask_transform, image_augment):
         super().__init__()
         self.X = X
         self.tta_params = tta_params
@@ -112,8 +112,8 @@ class MetadataImageSegmentationTTA(Dataset):
 
 
 class MetadataImageSegmentationDatasetDistances(Dataset):
-    def __init__(self, X, y,
-                 image_transform, image_augment_with_target,
+
+    def __init__(self, X, y, image_transform, image_augment_with_target,
                  mask_transform, image_augment):
         super().__init__()
         self.X = X
@@ -174,6 +174,7 @@ class MetadataImageSegmentationDatasetDistances(Dataset):
 
 
 class ImageSegmentationLoaderBasic(BaseTransformer):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__()
         self.loader_params = AttrDict(loader_params)
@@ -191,29 +192,38 @@ class ImageSegmentationLoaderBasic(BaseTransformer):
 
     def transform(self, X, y, X_valid=None, y_valid=None, train_mode=True):
         if train_mode and y is not None:
-            flow, steps = self.get_datagen(X, y, True, self.loader_params.training)
+            flow, steps = self.get_datagen(X, y, True,
+                                           self.loader_params.training)
         else:
-            flow, steps = self.get_datagen(X, None, False, self.loader_params.inference)
+            flow, steps = self.get_datagen(X, None, False,
+                                           self.loader_params.inference)
 
         if X_valid is not None and y_valid is not None:
-            valid_flow, valid_steps = self.get_datagen(X_valid, y_valid, False, self.loader_params.inference)
+            valid_flow, valid_steps = self.get_datagen(
+                X_valid, y_valid, False, self.loader_params.inference)
         else:
             valid_flow = None
             valid_steps = None
-        return {'datagen': (flow, steps),
-                'validation_datagen': (valid_flow, valid_steps)}
+        return {
+            'datagen': (flow, steps),
+            'validation_datagen': (valid_flow, valid_steps)
+        }
 
     def get_datagen(self, X, y, train_mode, loader_params):
         if train_mode:
-            dataset = self.dataset(X, y,
-                                   image_augment=self.image_augment_train,
-                                   image_augment_with_target=self.image_augment_with_target_train,
-                                   mask_transform=self.mask_transform,
-                                   image_transform=self.image_transform)
+            dataset = self.dataset(
+                X,
+                y,
+                image_augment=self.image_augment_train,
+                image_augment_with_target=self.image_augment_with_target_train,
+                mask_transform=self.mask_transform,
+                image_transform=self.image_transform)
         else:
-            dataset = self.dataset(X, y,
+            dataset = self.dataset(X,
+                                   y,
                                    image_augment=self.image_augment_inference,
-                                   image_augment_with_target=self.image_augment_with_target_inference,
+                                   image_augment_with_target=self.
+                                   image_augment_with_target_inference,
                                    mask_transform=self.mask_transform,
                                    image_transform=self.image_transform)
 
@@ -222,41 +232,47 @@ class ImageSegmentationLoaderBasic(BaseTransformer):
         return datagen, steps
 
 
-class MetadataImageSegmentationLoaderDistancesCropPad(ImageSegmentationLoaderBasic):
+class MetadataImageSegmentationLoaderDistancesCropPad(
+        ImageSegmentationLoaderBasic):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__(loader_params, dataset_params)
 
-        self.image_transform = transforms.Compose([transforms.ToTensor(),
-                                                   transforms.Normalize(mean=MEAN, std=STD),
-                                                   ])
-        self.mask_transform = transforms.Compose([transforms.Lambda(to_monochrome),
-                                                  transforms.Lambda(to_tensor),
-                                                  ])
+        self.image_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=MEAN, std=STD),
+        ])
+        self.mask_transform = transforms.Compose([
+            transforms.Lambda(to_monochrome),
+            transforms.Lambda(to_tensor),
+        ])
 
-        self.image_augment_with_target_train = ImgAug(crop_seq(crop_size=(self.dataset_params.h,
-                                                                          self.dataset_params.w)))
-        self.image_augment_with_target_inference = ImgAug(padding_seq(pad_size=(self.dataset_params.h_pad,
-                                                                                self.dataset_params.w_pad),
-                                                                      pad_method='replicate'
-                                                                      ))
+        self.image_augment_with_target_train = ImgAug(
+            crop_seq(crop_size=(self.dataset_params.h, self.dataset_params.w)))
+        self.image_augment_with_target_inference = ImgAug(
+            padding_seq(pad_size=(self.dataset_params.h_pad,
+                                  self.dataset_params.w_pad),
+                        pad_method='replicate'))
 
         self.dataset = MetadataImageSegmentationDatasetDistances
 
 
-class MetadataImageSegmentationLoaderDistancesResize(ImageSegmentationLoaderBasic):
+class MetadataImageSegmentationLoaderDistancesResize(
+        ImageSegmentationLoaderBasic):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__(loader_params, dataset_params)
 
-        self.image_transform = transforms.Compose([transforms.Resize((self.dataset_params.h,
-                                                                      self.dataset_params.w)),
-                                                   transforms.ToTensor(),
-                                                   transforms.Normalize(mean=MEAN, std=STD),
-                                                   ])
-        self.mask_transform = transforms.Compose([transforms.Resize((self.dataset_params.h,
-                                                                     self.dataset_params.w)),
-                                                  transforms.Lambda(to_monochrome),
-                                                  transforms.Lambda(to_tensor),
-                                                  ])
+        self.image_transform = transforms.Compose([
+            transforms.Resize((self.dataset_params.h, self.dataset_params.w)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=MEAN, std=STD),
+        ])
+        self.mask_transform = transforms.Compose([
+            transforms.Resize((self.dataset_params.h, self.dataset_params.w)),
+            transforms.Lambda(to_monochrome),
+            transforms.Lambda(to_tensor),
+        ])
 
         self.image_augment_with_target_train = ImgAug(fast_seq)
 
@@ -264,40 +280,44 @@ class MetadataImageSegmentationLoaderDistancesResize(ImageSegmentationLoaderBasi
 
 
 class MetadataImageSegmentationLoaderCropPad(ImageSegmentationLoaderBasic):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__(loader_params, dataset_params)
 
-        self.image_transform = transforms.Compose([transforms.ToTensor(),
-                                                   transforms.Normalize(mean=MEAN, std=STD),
-                                                   ])
-        self.mask_transform = transforms.Compose([transforms.Lambda(to_monochrome),
-                                                  transforms.Lambda(to_tensor),
-                                                  ])
+        self.image_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=MEAN, std=STD),
+        ])
+        self.mask_transform = transforms.Compose([
+            transforms.Lambda(to_monochrome),
+            transforms.Lambda(to_tensor),
+        ])
 
-        self.image_augment_with_target_train = ImgAug(crop_seq(crop_size=(self.dataset_params.h,
-                                                                          self.dataset_params.w)))
-        self.image_augment_with_target_inference = ImgAug(padding_seq(pad_size=(self.dataset_params.h_pad,
-                                                                                self.dataset_params.w_pad),
-                                                                      pad_method='replicate'
-                                                                      ))
+        self.image_augment_with_target_train = ImgAug(
+            crop_seq(crop_size=(self.dataset_params.h, self.dataset_params.w)))
+        self.image_augment_with_target_inference = ImgAug(
+            padding_seq(pad_size=(self.dataset_params.h_pad,
+                                  self.dataset_params.w_pad),
+                        pad_method='replicate'))
 
         self.dataset = MetadataImageSegmentationDataset
 
 
 class MetadataImageSegmentationLoaderResize(ImageSegmentationLoaderBasic):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__(loader_params, dataset_params)
 
-        self.image_transform = transforms.Compose([transforms.Resize((self.dataset_params.h,
-                                                                      self.dataset_params.w)),
-                                                   transforms.ToTensor(),
-                                                   transforms.Normalize(mean=MEAN, std=STD),
-                                                   ])
-        self.mask_transform = transforms.Compose([transforms.Resize((self.dataset_params.h,
-                                                                     self.dataset_params.w)),
-                                                  transforms.Lambda(to_monochrome),
-                                                  transforms.Lambda(to_tensor),
-                                                  ])
+        self.image_transform = transforms.Compose([
+            transforms.Resize((self.dataset_params.h, self.dataset_params.w)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=MEAN, std=STD),
+        ])
+        self.mask_transform = transforms.Compose([
+            transforms.Resize((self.dataset_params.h, self.dataset_params.w)),
+            transforms.Lambda(to_monochrome),
+            transforms.Lambda(to_tensor),
+        ])
 
         self.image_augment_with_target_train = ImgAug(fast_seq)
 
@@ -305,27 +325,32 @@ class MetadataImageSegmentationLoaderResize(ImageSegmentationLoaderBasic):
 
 
 class ImageSegmentationLoaderInferencePadding(ImageSegmentationLoaderBasic):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__(loader_params, dataset_params)
 
-        self.image_augment_inference = ImgAug(padding_seq(pad_size=(self.dataset_params.h_pad,
-                                                                    self.dataset_params.w_pad),
-                                                          pad_method='replicate'
-                                                          ))
-        self.image_transform = transforms.Compose([transforms.ToTensor(),
-                                                   transforms.Normalize(mean=MEAN, std=STD),
-                                                   ])
+        self.image_augment_inference = ImgAug(
+            padding_seq(pad_size=(self.dataset_params.h_pad,
+                                  self.dataset_params.w_pad),
+                        pad_method='replicate'))
+        self.image_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=MEAN, std=STD),
+        ])
         self.dataset = MetadataImageSegmentationTTA
 
     def transform(self, X, **kwargs):
         flow, steps = self.get_datagen(X, self.loader_params.inference)
         valid_flow = None
         valid_steps = None
-        return {'datagen': (flow, steps),
-                'validation_datagen': (valid_flow, valid_steps)}
+        return {
+            'datagen': (flow, steps),
+            'validation_datagen': (valid_flow, valid_steps)
+        }
 
     def get_datagen(self, X, loader_params):
-        dataset = self.dataset(X, None,
+        dataset = self.dataset(X,
+                               None,
                                image_augment=self.image_augment_inference,
                                image_augment_with_target=None,
                                mask_transform=None,
@@ -337,27 +362,33 @@ class ImageSegmentationLoaderInferencePadding(ImageSegmentationLoaderBasic):
 
 
 class ImageSegmentationLoaderInferencePaddingTTA(ImageSegmentationLoaderBasic):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__(loader_params, dataset_params)
 
-        self.image_augment_inference = ImgAug(padding_seq(pad_size=(self.dataset_params.h_pad,
-                                                                    self.dataset_params.w_pad),
-                                                          pad_method='replicate'
-                                                          ))
-        self.image_transform = transforms.Compose([transforms.ToTensor(),
-                                                   transforms.Normalize(mean=MEAN, std=STD),
-                                                   ])
+        self.image_augment_inference = ImgAug(
+            padding_seq(pad_size=(self.dataset_params.h_pad,
+                                  self.dataset_params.w_pad),
+                        pad_method='replicate'))
+        self.image_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=MEAN, std=STD),
+        ])
         self.dataset = MetadataImageSegmentationTTA
 
     def transform(self, X, tta_params, **kwargs):
-        flow, steps = self.get_datagen(X, tta_params, self.loader_params.inference)
+        flow, steps = self.get_datagen(X, tta_params,
+                                       self.loader_params.inference)
         valid_flow = None
         valid_steps = None
-        return {'datagen': (flow, steps),
-                'validation_datagen': (valid_flow, valid_steps)}
+        return {
+            'datagen': (flow, steps),
+            'validation_datagen': (valid_flow, valid_steps)
+        }
 
     def get_datagen(self, X, tta_params, loader_params):
-        dataset = self.dataset(X, tta_params,
+        dataset = self.dataset(X,
+                               tta_params,
                                image_augment=self.image_augment_inference,
                                image_augment_with_target=None,
                                mask_transform=None,
@@ -369,25 +400,30 @@ class ImageSegmentationLoaderInferencePaddingTTA(ImageSegmentationLoaderBasic):
 
 
 class ImageSegmentationLoaderResizeTTA(ImageSegmentationLoaderBasic):
+
     def __init__(self, loader_params, dataset_params):
         super().__init__(loader_params, dataset_params)
 
-        self.image_transform = transforms.Compose([transforms.Resize((self.dataset_params.h,
-                                                                      self.dataset_params.w)),
-                                                   transforms.ToTensor(),
-                                                   transforms.Normalize(mean=MEAN, std=STD),
-                                                   ])
+        self.image_transform = transforms.Compose([
+            transforms.Resize((self.dataset_params.h, self.dataset_params.w)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=MEAN, std=STD),
+        ])
         self.dataset = MetadataImageSegmentationTTA
 
     def transform(self, X, tta_params, **kwargs):
-        flow, steps = self.get_datagen(X, tta_params, self.loader_params.inference)
+        flow, steps = self.get_datagen(X, tta_params,
+                                       self.loader_params.inference)
         valid_flow = None
         valid_steps = None
-        return {'datagen': (flow, steps),
-                'validation_datagen': (valid_flow, valid_steps)}
+        return {
+            'datagen': (flow, steps),
+            'validation_datagen': (valid_flow, valid_steps)
+        }
 
     def get_datagen(self, X, tta_params, loader_params):
-        dataset = self.dataset(X, tta_params,
+        dataset = self.dataset(X,
+                               tta_params,
                                image_augment=None,
                                image_augment_with_target=None,
                                mask_transform=None,
@@ -399,6 +435,7 @@ class ImageSegmentationLoaderResizeTTA(ImageSegmentationLoaderBasic):
 
 
 class TestTimeAugmentationGenerator(BaseTransformer):
+
     def __init__(self, **kwargs):
         self.tta_transformations = AttrDict(kwargs)
 
@@ -413,22 +450,37 @@ class TestTimeAugmentationGenerator(BaseTransformer):
         return {'X_tta': X_tta, 'tta_params': tta_params, 'img_ids': img_ids}
 
     def _get_tta_data(self, i, row):
-        original_specs = {'ud_flip': False, 'lr_flip': False, 'rotation': 0, 'color_shift': False}
+        original_specs = {
+            'ud_flip': False,
+            'lr_flip': False,
+            'rotation': 0,
+            'color_shift': False
+        }
         tta_specs = [original_specs]
 
-        ud_options = [True, False] if self.tta_transformations.flip_ud else [False]
-        lr_options = [True, False] if self.tta_transformations.flip_lr else [False]
-        rot_options = [0, 90, 180, 270] if self.tta_transformations.rotation else [0]
+        ud_options = [True, False
+                      ] if self.tta_transformations.flip_ud else [False]
+        lr_options = [True, False
+                      ] if self.tta_transformations.flip_lr else [False]
+        rot_options = [0, 90, 180, 270
+                       ] if self.tta_transformations.rotation else [0]
         if self.tta_transformations.color_shift_runs:
-            color_shift_options = list(range(1, self.tta_transformations.color_shift_runs + 1, 1))
+            color_shift_options = list(
+                range(1, self.tta_transformations.color_shift_runs + 1, 1))
         else:
             color_shift_options = [False]
 
-        for ud, lr, rot, color in product(ud_options, lr_options, rot_options, color_shift_options):
+        for ud, lr, rot, color in product(ud_options, lr_options, rot_options,
+                                          color_shift_options):
             if ud is False and lr is False and rot == 0 and color is False:
                 continue
             else:
-                tta_specs.append({'ud_flip': ud, 'lr_flip': lr, 'rotation': rot, 'color_shift': color})
+                tta_specs.append({
+                    'ud_flip': ud,
+                    'lr_flip': lr,
+                    'rotation': rot,
+                    'color_shift': color
+                })
 
         img_ids = [i] * len(tta_specs)
         X_rows = [row] * len(tta_specs)
@@ -436,17 +488,19 @@ class TestTimeAugmentationGenerator(BaseTransformer):
 
 
 class TestTimeAugmentationAggregator(BaseTransformer):
+
     def __init__(self, method, num_threads):
         self.method = method
         self.num_threads = num_threads
 
     @property
     def agg_method(self):
-        methods = {'mean': np.mean,
-                   'max': np.max,
-                   'min': np.min,
-                   'gmean': gmean
-                   }
+        methods = {
+            'mean': np.mean,
+            'max': np.max,
+            'min': np.min,
+            'gmean': gmean
+        }
         return partial(methods[self.method], axis=-1)
 
     def transform(self, images, tta_params, img_ids, **kwargs):
@@ -458,7 +512,8 @@ class TestTimeAugmentationAggregator(BaseTransformer):
         unique_img_ids = set(img_ids)
         threads = min(self.num_threads, len(unique_img_ids))
         with mp.pool.ThreadPool(threads) as executor:
-            averages_images = executor.map(_aggregate_augmentations, unique_img_ids)
+            averages_images = executor.map(_aggregate_augmentations,
+                                           unique_img_ids)
         return {'aggregated_prediction': averages_images}
 
 
@@ -466,7 +521,8 @@ def aggregate_augmentations(img_id, images, tta_params, img_ids, agg_method):
     tta_predictions_for_id = []
     for image, tta_param, ids in zip(images, tta_params, img_ids):
         if ids == img_id:
-            tta_prediction = test_time_augmentation_inverse_transform(image, tta_param)
+            tta_prediction = test_time_augmentation_inverse_transform(
+                image, tta_param)
             tta_predictions_for_id.append(tta_prediction)
         else:
             continue
